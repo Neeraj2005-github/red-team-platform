@@ -1,0 +1,44 @@
+{
+  "445_windows7": {
+    "technique": "T1210",
+    "exploit": "ms17_010_eternalblue",
+    "severity": "critical",
+    "cvss": 9.8,
+    "description": "SMBv1 vulnerability allowing remote code execution on Windows 7 systems via EternalBlue exploit."
+  },
+  "80_apache_2.4.49": {
+    "technique": "T1190",
+    "exploit": "apache_path_traversal_cve2021_41773",
+    "severity": "high",
+    "cvss": 7.5,
+    "description": "Apache HTTP Server 2.4.49 path traversal vulnerability allowing arbitrary file read and potential RCE."
+  },
+  "22_openssh_7.2": {
+    "technique": "T1078",
+    "exploit": "ssh_user_enumeration_cve2018_15473",
+    "severity": "medium",
+    "cvss": 5.3,
+    "description": "OpenSSH 7.2 user enumeration vulnerability allows attackers to identify valid usernames."
+  },
+  "3306_mysql_5.7": {
+    "technique": "T1190",
+    "exploit": "mysql_auth_bypass",
+    "severity": "high",
+    "cvss": 8.1,
+    "description": "MySQL 5.7 authentication bypass vulnerability allowing unauthorized database access."
+  },
+  "8080_tomcat_9.0": {
+    "technique": "T1190",
+    "exploit": "tomcat_ghostcat_cve2020_1938",
+    "severity": "critical",
+    "cvss": 9.8,
+    "description": "Apache Tomcat GhostCat vulnerability allows reading/writing files via AJP connector."
+  },
+  "139_samba_4.5": {
+    "technique": "T1210",
+    "exploit": "samba_rce_cve2017_7494",
+    "severity": "critical",
+    "cvss": 9.8,
+    "description": "Samba remote code execution via malicious shared library upload."
+  }
+}

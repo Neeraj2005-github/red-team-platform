@@ -1,0 +1,85 @@
+{
+  "techniques": {
+    "T1595": {
+      "id": "T1595",
+      "name": "Active Scanning",
+      "tactic": "Reconnaissance",
+      "description": "Adversaries may execute active reconnaissance scans to gather information that can be used during targeting.",
+      "url": "https://attack.mitre.org/techniques/T1595/"
+    },
+    "T1190": {
+      "id": "T1190",
+      "name": "Exploit Public-Facing Application",
+      "tactic": "Initial Access",
+      "description": "Adversaries may attempt to exploit a weakness in an Internet-facing host or system to initially access a network.",
+      "url": "https://attack.mitre.org/techniques/T1190/"
+    },
+    "T1210": {
+      "id": "T1210",
+      "name": "Exploitation of Remote Services",
+      "tactic": "Lateral Movement",
+      "description": "Adversaries may exploit remote services to gain unauthorized access to internal systems once inside of a network.",
+      "url": "https://attack.mitre.org/techniques/T1210/"
+    },
+    "T1068": {
+      "id": "T1068",
+      "name": "Exploitation for Privilege Escalation",
+      "tactic": "Privilege Escalation",
+      "description": "Adversaries may exploit software vulnerabilities in an attempt to elevate privileges.",
+      "url": "https://attack.mitre.org/techniques/T1068/"
+    },
+    "T1053": {
+      "id": "T1053",
+      "name": "Scheduled Task/Job",
+      "tactic": "Persistence",
+      "description": "Adversaries may abuse task scheduling functionality to facilitate initial or recurring execution of malicious code.",
+      "url": "https://attack.mitre.org/techniques/T1053/"
+    },
+    "T1547": {
+      "id": "T1547",
+      "name": "Boot or Logon Autostart Execution",
+      "tactic": "Persistence",
+      "description": "Adversaries may configure system settings to automatically execute a program during system boot or logon.",
+      "url": "https://attack.mitre.org/techniques/T1547/"
+    },
+    "T1021": {
+      "id": "T1021",
+      "name": "Remote Services",
+      "tactic": "Lateral Movement",
+      "description": "Adversaries may use valid accounts to log into a service specifically designed to accept remote connections.",
+      "url": "https://attack.mitre.org/techniques/T1021/"
+    },
+    "T1078": {
+      "id": "T1078",
+      "name": "Valid Accounts",
+      "tactic": "Credential Access",
+      "description": "Adversaries may obtain and abuse credentials of existing accounts as a means of gaining access.",
+      "url": "https://attack.mitre.org/techniques/T1078/"
+    },
+    "T1059": {
+      "id": "T1059",
+      "name": "Command and Scripting Interpreter",
+      "tactic": "Execution",
+      "description": "Adversaries may abuse command and script interpreters to execute commands, scripts, or binaries.",
+      "url": "https://attack.mitre.org/techniques/T1059/"
+    }
+  },
+  "tactics": [
+    "Reconnaissance",
+    "Initial Access",
+    "Execution",
+    "Privilege Escalation",
+    "Persistence",
+    "Credential Access",
+    "Lateral Movement"
+  ],
+  "attack_chain_mapping": {
+    "recon": ["T1595"],
+    "initial_access": ["T1190", "T1210"],
+    "execution": ["T1059"],
+    "privilege_escalation": ["T1068"],
+    "persistence": ["T1053", "T1547"],
+    "credential_access": ["T1078"],
+    "lateral_movement": ["T1021"]
+  }
+}
