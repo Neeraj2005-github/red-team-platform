@@ -68,11 +68,44 @@ export function performRecon(state: AttackState): {
     },
   ]
 
+  // Subdomain enumeration
+  const baseDomain = state.target
+  const subdomainPrefixes = ["mail", "vpn", "dev", "staging", "api", "admin", "portal", "db", "ftp", "git"]
+  const discoveredSubdomains = subdomainPrefixes
+    .filter(() => Math.random() < 0.5)
+    .map((prefix) => {
+      const alive = Math.random() < 0.7
+      return {
+        subdomain: `${prefix}.${baseDomain}`,
+        ip: `${state.target.split(".").slice(0, 3).join(".")}.${Math.floor(Math.random() * 254) + 1}`,
+        status: alive ? ("alive" as const) : ("dead" as const),
+      }
+    })
+
+  logs.push({
+    timestamp: timestamp(),
+    phase: "recon" as const,
+    message: `Subdomain enumeration: discovered ${discoveredSubdomains.length} subdomains (${discoveredSubdomains.filter((s) => s.status === "alive").length} alive)`,
+    level: "success",
+  })
+
+  discoveredSubdomains
+    .filter((s) => s.status === "alive")
+    .forEach((s) => {
+      logs.push({
+        timestamp: timestamp(),
+        phase: "recon" as const,
+        message: `  [ALIVE] ${s.subdomain} -> ${s.ip}`,
+        level: "info",
+      })
+    })
+
   const reconResult: ReconResult = {
     target: state.target,
     timestamp: timestamp(),
     ports: SERVICE_SCAN_RESULTS,
     os: OS_DETECTION,
+    subdomains: discoveredSubdomains,
     mitreTechnique: MITRE_TECHNIQUES.T1595,
   }
 
@@ -204,6 +237,14 @@ export function executeExploit(
       : "user"
     : currentAccess
 
+  // AI Decision Reasoning
+  logs.push({
+    timestamp: timestamp(),
+    phase: "exploitation",
+    message: `[AI-DECISION] Selected ${vulnerability.exploit} (CVSS: ${vulnerability.cvss}) over ${vulnerability.severity === "critical" ? "lower-severity alternatives" : "other candidates"}. Rationale: port ${vulnerability.port}/${vulnerability.service} matches knowledge base signature with ${(successChance * 100).toFixed(0)}% estimated success rate. Current access: ${currentAccess}.`,
+    level: "info",
+  })
+
   logs.push({
     timestamp: timestamp(),
     phase: "exploitation",
@@ -290,6 +331,13 @@ export function attemptPrivilegeEscalation(
     timestamp: timestamp(),
     phase: "privilege_escalation",
     message: `Current access level: ${currentAccess}. Attempting privilege escalation...`,
+    level: "info",
+  })
+
+  logs.push({
+    timestamp: timestamp(),
+    phase: "privilege_escalation",
+    message: `[AI-DECISION] Detected ${isLinux ? "Linux" : "Windows"} environment. Evaluated ${techniques.length} escalation paths. Selected: "${chosenTechnique}" based on OS fingerprint and current ${currentAccess}-level access.`,
     level: "info",
   })
 

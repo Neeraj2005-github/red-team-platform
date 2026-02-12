@@ -35,11 +35,18 @@ export interface OSDetection {
   accuracy: number
 }
 
+export interface SubdomainResult {
+  subdomain: string
+  ip: string
+  status: "alive" | "dead"
+}
+
 export interface ReconResult {
   target: string
   timestamp: string
   ports: ScanResult[]
   os: OSDetection
+  subdomains: SubdomainResult[]
   mitreTechnique: MitreTechnique
 }
 

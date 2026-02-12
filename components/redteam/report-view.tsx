@@ -74,6 +74,10 @@ export function ReportView({
           compromisedHosts: summary.compromisedHosts,
           credentialsObtained: summary.credentialsObtained,
         },
+        subdomains: state.reconResult?.subdomains?.filter((s) => s.status === "alive").map((s) => ({
+          subdomain: s.subdomain,
+          ip: s.ip,
+        })) || [],
         vulnerabilities: state.vulnerabilities.map((v) => ({
           id: v.id,
           name: v.name,
@@ -152,6 +156,14 @@ export function ReportView({
       `Persistence Established:   ${summary.persistenceEstablished ? "Yes" : "No"}`,
       `Lateral Movement Successes: ${summary.lateralMovementSuccesses}`,
       `Compromised Hosts:         ${summary.compromisedHosts.join(", ")}`,
+      "",
+      "-".repeat(60),
+      "  DISCOVERED SUBDOMAINS",
+      "-".repeat(60),
+      "",
+      ...(state.reconResult?.subdomains?.filter((s) => s.status === "alive").map(
+        (s) => `[ALIVE] ${s.subdomain} -> ${s.ip}`
+      ) || ["  No subdomains discovered"]),
       "",
       "-".repeat(60),
       "  VULNERABILITIES",
