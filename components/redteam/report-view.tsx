@@ -95,14 +95,91 @@ export function ReportView({
     2
   )
 
-  function downloadReport() {
-    const blob = new Blob([reportJSON], { type: "application/json" })
+  function downloadFile(content: string, filename: string, type: string) {
+    const blob = new Blob([content], { type })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `redteam-report-${summary.target.replace(/\./g, "_")}.json`
+    a.download = filename
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  function downloadJSON() {
+    downloadFile(
+      reportJSON,
+      `redteam-report-${summary.target.replace(/\./g, "_")}.json`,
+      "application/json"
+    )
+  }
+
+  function downloadCSV() {
+    const header = "CVE,Name,Severity,CVSS,Port,MITRE Technique\n"
+    const rows = state.vulnerabilities
+      .map(
+        (v) =>
+          `"${v.id}","${v.name}","${v.severity}",${v.cvss},${v.port},"${v.mitreTechnique.id}"`
+      )
+      .join("\n")
+    downloadFile(
+      header + rows,
+      `redteam-vulns-${summary.target.replace(/\./g, "_")}.csv`,
+      "text/csv"
+    )
+  }
+
+  function downloadText() {
+    const divider = "=".repeat(60)
+    const lines = [
+      divider,
+      "  RED TEAM ATTACK SIMULATION REPORT",
+      divider,
+      "",
+      `Target:              ${summary.target}`,
+      `Start Time:          ${new Date(summary.startTime).toLocaleString()}`,
+      `End Time:            ${new Date(summary.endTime).toLocaleString()}`,
+      `Compromise Status:   ${compromiseStatus}`,
+      `Final Access Level:  ${summary.finalAccessLevel.toUpperCase()}`,
+      "",
+      "-".repeat(60),
+      "  RESULTS SUMMARY",
+      "-".repeat(60),
+      "",
+      `Vulnerabilities Found:     ${summary.vulnerabilitiesFound}`,
+      `Exploits Attempted:        ${summary.exploitsAttempted}`,
+      `Successful Exploits:       ${summary.successfulExploits}`,
+      `Credentials Obtained:      ${summary.credentialsObtained}`,
+      `Persistence Established:   ${summary.persistenceEstablished ? "Yes" : "No"}`,
+      `Lateral Movement Successes: ${summary.lateralMovementSuccesses}`,
+      `Compromised Hosts:         ${summary.compromisedHosts.join(", ")}`,
+      "",
+      "-".repeat(60),
+      "  VULNERABILITIES",
+      "-".repeat(60),
+      "",
+      ...state.vulnerabilities.map(
+        (v) =>
+          `[${v.severity.toUpperCase()}] ${v.id} - ${v.name} (CVSS: ${v.cvss}, Port: ${v.port})`
+      ),
+      "",
+      "-".repeat(60),
+      "  MITRE ATT&CK TECHNIQUES",
+      "-".repeat(60),
+      "",
+      ...mitreMapping.map(
+        (m) =>
+          `[${m.result.toUpperCase()}] ${m.technique.id} - ${m.technique.name} (${m.technique.tactic})`
+      ),
+      "",
+      divider,
+      "  END OF REPORT",
+      divider,
+    ]
+    downloadFile(
+      lines.join("\n"),
+      `redteam-report-${summary.target.replace(/\./g, "_")}.txt`,
+      "text/plain"
+    )
   }
 
   return (
@@ -119,14 +196,34 @@ export function ReportView({
               {new Date(summary.endTime).toLocaleString()}
             </p>
           </div>
-          <Button
-            onClick={downloadReport}
-            size="sm"
-            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Export JSON
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={downloadJSON}
+              size="sm"
+              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Download className="h-3.5 w-3.5" />
+              JSON
+            </Button>
+            <Button
+              onClick={downloadCSV}
+              size="sm"
+              variant="outline"
+              className="gap-2 border-border text-foreground hover:bg-secondary"
+            >
+              <Download className="h-3.5 w-3.5" />
+              CSV
+            </Button>
+            <Button
+              onClick={downloadText}
+              size="sm"
+              variant="outline"
+              className="gap-2 border-border text-foreground hover:bg-secondary"
+            >
+              <Download className="h-3.5 w-3.5" />
+              TXT
+            </Button>
+          </div>
         </div>
 
         {/* Compromise Status Banner */}
