@@ -13,17 +13,13 @@ import type {
 } from "./types"
 import {
   MITRE_TECHNIQUES,
-  KNOWLEDGE_BASE,
-  SERVICE_SCAN_RESULTS,
-  OS_DETECTION,
+  generateScanResults,
+  generateOSDetection,
+  matchVulnerabilities,
 } from "./knowledge-base"
 
 function timestamp(): string {
   return new Date().toISOString()
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export function createInitialState(target: string): AttackState {
@@ -46,7 +42,7 @@ export function createInitialState(target: string): AttackState {
   }
 }
 
-// --- RECON MODULE ---
+// --- RECON MODULE (fully dynamic per IP) ---
 export function performRecon(state: AttackState): {
   reconResult: ReconResult
   logs: AttackLogEntry[]
@@ -63,29 +59,38 @@ export function performRecon(state: AttackState): {
     {
       timestamp: timestamp(),
       phase: "recon",
-      message: `Running: nmap -sV -O -Pn ${state.target}`,
+      message: `Running: nmap -sV -sC -O -Pn -T4 ${state.target}`,
       level: "info",
     },
   ]
 
+  // Dynamic port/service discovery based on target IP
+  const scanResults = generateScanResults(state.target)
+  const osDetection = generateOSDetection(state.target)
+
   // Subdomain enumeration
-  const baseDomain = state.target
-  const subdomainPrefixes = ["mail", "vpn", "dev", "staging", "api", "admin", "portal", "db", "ftp", "git"]
+  const subdomainPrefixes = [
+    "mail", "vpn", "dev", "staging", "api", "admin", "portal",
+    "db", "ftp", "git", "ci", "jenkins", "grafana", "monitor",
+    "wiki", "jira", "confluence", "sso", "auth", "cdn",
+  ]
   const discoveredSubdomains = subdomainPrefixes
-    .filter(() => Math.random() < 0.5)
+    .filter(() => Math.random() < 0.35)
     .map((prefix) => {
-      const alive = Math.random() < 0.7
+      const alive = Math.random() < 0.65
       return {
-        subdomain: `${prefix}.${baseDomain}`,
+        subdomain: `${prefix}.${state.target}`,
         ip: `${state.target.split(".").slice(0, 3).join(".")}.${Math.floor(Math.random() * 254) + 1}`,
         status: alive ? ("alive" as const) : ("dead" as const),
       }
     })
 
+  const aliveCount = discoveredSubdomains.filter((s) => s.status === "alive").length
+
   logs.push({
     timestamp: timestamp(),
-    phase: "recon" as const,
-    message: `Subdomain enumeration: discovered ${discoveredSubdomains.length} subdomains (${discoveredSubdomains.filter((s) => s.status === "alive").length} alive)`,
+    phase: "recon",
+    message: `Subdomain enumeration: discovered ${discoveredSubdomains.length} subdomains (${aliveCount} alive)`,
     level: "success",
   })
 
@@ -94,7 +99,7 @@ export function performRecon(state: AttackState): {
     .forEach((s) => {
       logs.push({
         timestamp: timestamp(),
-        phase: "recon" as const,
+        phase: "recon",
         message: `  [ALIVE] ${s.subdomain} -> ${s.ip}`,
         level: "info",
       })
@@ -103,32 +108,32 @@ export function performRecon(state: AttackState): {
   const reconResult: ReconResult = {
     target: state.target,
     timestamp: timestamp(),
-    ports: SERVICE_SCAN_RESULTS,
-    os: OS_DETECTION,
+    ports: scanResults,
+    os: osDetection,
     subdomains: discoveredSubdomains,
     mitreTechnique: MITRE_TECHNIQUES.T1595,
   }
 
-  SERVICE_SCAN_RESULTS.forEach((port) => {
+  scanResults.forEach((port) => {
     logs.push({
       timestamp: timestamp(),
       phase: "recon",
       message: `Discovered ${port.state} port ${port.port}/${port.protocol} - ${port.service} ${port.version}`,
-      level: "success",
+      level: port.state === "open" ? "success" : "info",
     })
   })
 
   logs.push({
     timestamp: timestamp(),
     phase: "recon",
-    message: `OS Detection: ${OS_DETECTION.name} (${OS_DETECTION.accuracy}% confidence)`,
+    message: `OS Detection: ${osDetection.name} [${osDetection.family}] (${osDetection.accuracy}% confidence)`,
     level: "info",
   })
 
   logs.push({
     timestamp: timestamp(),
     phase: "recon",
-    message: `Reconnaissance complete. ${SERVICE_SCAN_RESULTS.length} open ports discovered.`,
+    message: `Reconnaissance complete. ${scanResults.filter((p) => p.state === "open").length} open ports, ${scanResults.filter((p) => p.state === "filtered").length} filtered.`,
     level: "success",
     mitreTechnique: MITRE_TECHNIQUES.T1595,
   })
@@ -143,7 +148,7 @@ export function performRecon(state: AttackState): {
   return { reconResult, logs, mitreMapping }
 }
 
-// --- ANALYZER MODULE ---
+// --- ANALYZER MODULE (dynamic vulnerability matching) ---
 export function analyzeVulnerabilities(
   reconResult: ReconResult
 ): {
@@ -154,57 +159,63 @@ export function analyzeVulnerabilities(
     {
       timestamp: timestamp(),
       phase: "analysis",
-      message: "Analyzing discovered services against knowledge base...",
+      message: `Analyzing ${reconResult.ports.filter((p) => p.state === "open").length} open services against vulnerability knowledge base (${reconResult.os.name})...`,
       level: "info",
     },
   ]
 
-  const vulnerabilities: Vulnerability[] = []
+  // Dynamically match vulnerabilities to discovered services
+  const matchedEntries = matchVulnerabilities(reconResult.ports)
 
-  reconResult.ports.forEach((port) => {
-    const serviceKey = `${port.port}_${port.service.split("-")[0]}`
-    const matchingEntries = KNOWLEDGE_BASE.filter((entry) => {
-      const entryPort = parseInt(entry.key.split("_")[0])
-      return entryPort === port.port
-    })
+  const vulnerabilities: Vulnerability[] = matchedEntries.map((entry, idx) => {
+    const technique = MITRE_TECHNIQUES[entry.technique]
+    const port = parseInt(entry.key.split("_")[0])
+    const portInfo = reconResult.ports.find((p) => p.port === port)
 
-    matchingEntries.forEach((entry) => {
-      const technique = MITRE_TECHNIQUES[entry.technique]
-      const vuln: Vulnerability = {
-        id: `VULN-${vulnerabilities.length + 1}`,
-        name: entry.exploit.replace(/_/g, " ").toUpperCase(),
-        severity: entry.severity,
-        port: port.port,
-        service: `${port.service} ${port.version}`,
-        exploit: entry.exploit,
-        mitreTechnique: technique,
-        cvss: entry.cvss,
-        description: entry.description,
-      }
-      vulnerabilities.push(vuln)
-
-      logs.push({
-        timestamp: timestamp(),
-        phase: "analysis",
-        message: `[${entry.severity.toUpperCase()}] ${entry.exploit} matched on port ${port.port} (CVSS: ${entry.cvss})`,
-        level:
-          entry.severity === "critical" || entry.severity === "high"
-            ? "warning"
-            : "info",
-        mitreTechnique: technique,
-      })
-    })
+    return {
+      id: `CVE-${2015 + Math.floor(Math.random() * 10)}-${String(Math.floor(Math.random() * 90000) + 10000)}`,
+      name: entry.exploit.replace(/_/g, " ").toUpperCase(),
+      severity: entry.severity,
+      port,
+      service: portInfo ? `${portInfo.service} ${portInfo.version}` : entry.key.split("_")[1],
+      exploit: entry.exploit,
+      mitreTechnique: technique,
+      cvss: entry.cvss,
+      description: entry.description,
+    }
   })
 
-  // Sort by CVSS score descending
+  // Sort by CVSS descending
   vulnerabilities.sort((a, b) => b.cvss - a.cvss)
 
-  logs.push({
-    timestamp: timestamp(),
-    phase: "analysis",
-    message: `Analysis complete. ${vulnerabilities.length} candidate exploits identified.`,
-    level: "success",
+  vulnerabilities.forEach((v) => {
+    logs.push({
+      timestamp: timestamp(),
+      phase: "analysis",
+      message: `[${v.severity.toUpperCase()}] ${v.id} - ${v.exploit} on port ${v.port} (CVSS: ${v.cvss})`,
+      level:
+        v.severity === "critical" || v.severity === "high"
+          ? "warning"
+          : "info",
+      mitreTechnique: v.mitreTechnique,
+    })
   })
+
+  if (vulnerabilities.length === 0) {
+    logs.push({
+      timestamp: timestamp(),
+      phase: "analysis",
+      message: "No matching vulnerabilities found for discovered services. Target may be hardened.",
+      level: "warning",
+    })
+  } else {
+    logs.push({
+      timestamp: timestamp(),
+      phase: "analysis",
+      message: `Analysis complete. ${vulnerabilities.length} candidate exploits identified (${vulnerabilities.filter((v) => v.severity === "critical").length} critical, ${vulnerabilities.filter((v) => v.severity === "high").length} high).`,
+      level: "success",
+    })
+  }
 
   return { vulnerabilities, logs }
 }
@@ -220,35 +231,36 @@ export function executeExploit(
 } {
   const logs: AttackLogEntry[] = []
 
-  // Decision engine: choose best exploit
   const successChance =
     vulnerability.severity === "critical"
-      ? 0.95
+      ? 0.92
       : vulnerability.severity === "high"
-        ? 0.8
+        ? 0.75
         : vulnerability.severity === "medium"
-          ? 0.6
-          : 0.3
+          ? 0.55
+          : 0.25
 
   const success = Math.random() < successChance
   const accessGained: AccessLevel = success
     ? vulnerability.cvss >= 9.0
       ? "admin"
-      : "user"
+      : vulnerability.cvss >= 7.0
+        ? "user"
+        : currentAccess
     : currentAccess
 
   // AI Decision Reasoning
   logs.push({
     timestamp: timestamp(),
     phase: "exploitation",
-    message: `[AI-DECISION] Selected ${vulnerability.exploit} (CVSS: ${vulnerability.cvss}) over ${vulnerability.severity === "critical" ? "lower-severity alternatives" : "other candidates"}. Rationale: port ${vulnerability.port}/${vulnerability.service} matches knowledge base signature with ${(successChance * 100).toFixed(0)}% estimated success rate. Current access: ${currentAccess}.`,
+    message: `[AI-DECISION] Evaluating ${vulnerability.exploit} (${vulnerability.id}, CVSS: ${vulnerability.cvss}). Service: ${vulnerability.service} on port ${vulnerability.port}. Estimated success probability: ${(successChance * 100).toFixed(0)}%. Risk assessment: ${vulnerability.severity}. Current access: ${currentAccess}. Proceeding with exploitation.`,
     level: "info",
   })
 
   logs.push({
     timestamp: timestamp(),
     phase: "exploitation",
-    message: `[EXPLOIT] Attempting ${vulnerability.exploit} on port ${vulnerability.port}...`,
+    message: `[EXPLOIT] Launching ${vulnerability.exploit} against ${vulnerability.service} on port ${vulnerability.port}...`,
     level: "info",
     mitreTechnique: vulnerability.mitreTechnique,
   })
@@ -257,24 +269,33 @@ export function executeExploit(
     logs.push({
       timestamp: timestamp(),
       phase: "exploitation",
-      message: `[SUCCESS] ${vulnerability.exploit} - ${accessGained} access gained!`,
+      message: `[SUCCESS] ${vulnerability.exploit} -> gained ${accessGained}-level shell on target`,
       level: "success",
       mitreTechnique: vulnerability.mitreTechnique,
     })
 
     if (vulnerability.cvss >= 9.0) {
+      const users = ["admin", "root", "svc_account", "dbadmin", "www-data"]
+      const user = users[Math.floor(Math.random() * users.length)]
       logs.push({
         timestamp: timestamp(),
         phase: "exploitation",
-        message: `Credentials harvested: admin:$6$rounds=5000$salt$hash...`,
+        message: `  Credentials harvested: ${user}:$6$rounds=5000$${Math.random().toString(36).substring(2, 10)}$...`,
         level: "success",
       })
     }
   } else {
+    const reasons = [
+      "Target appears patched against this vulnerability.",
+      "WAF/IDS blocked payload delivery.",
+      "Exploit payload did not trigger - service may be custom build.",
+      "Connection reset by peer - firewall rule detected.",
+      "Exploit timed out - service may have crash protection.",
+    ]
     logs.push({
       timestamp: timestamp(),
       phase: "exploitation",
-      message: `[FAILED] ${vulnerability.exploit} - Exploit did not succeed. Target may be patched.`,
+      message: `[FAILED] ${vulnerability.exploit} - ${reasons[Math.floor(Math.random() * reasons.length)]}`,
       level: "error",
       mitreTechnique: vulnerability.mitreTechnique,
     })
@@ -285,8 +306,8 @@ export function executeExploit(
     success,
     accessGained,
     output: success
-      ? `Exploit ${vulnerability.exploit} succeeded. Gained ${accessGained} shell on ${vulnerability.port}/${vulnerability.service}.`
-      : `Exploit ${vulnerability.exploit} failed. Service may be patched or firewall rules blocked payload delivery.`,
+      ? `Exploit ${vulnerability.exploit} succeeded. Gained ${accessGained} shell.`
+      : `Exploit ${vulnerability.exploit} failed.`,
     timestamp: timestamp(),
   }
 
@@ -300,7 +321,7 @@ export function executeExploit(
   return { result, logs, mitreMapping }
 }
 
-// --- PRIVILEGE ESCALATION ENGINE ---
+// --- PRIVILEGE ESCALATION ENGINE (OS-aware) ---
 export function attemptPrivilegeEscalation(
   currentAccess: AccessLevel,
   osFamily: string
@@ -310,41 +331,51 @@ export function attemptPrivilegeEscalation(
   mitreMapping: MitreMapping
 } {
   const logs: AttackLogEntry[] = []
-  const isLinux = osFamily.toLowerCase().includes("linux")
+  const isLinux = osFamily.toLowerCase().includes("linux") || osFamily.toLowerCase().includes("bsd")
 
   const techniques = isLinux
     ? [
-        "SUID binary exploitation (/usr/bin/find)",
-        "sudo misconfiguration (NOPASSWD)",
+        "SUID binary exploitation (/usr/bin/find -exec)",
+        "sudo misconfiguration (NOPASSWD entry for /usr/bin/vim)",
         "Kernel exploit (DirtyCOW CVE-2016-5195)",
+        "Writable /etc/passwd (add root-equivalent user)",
+        "Cron job wildcard injection (/opt/scripts/backup.sh)",
+        "Docker group membership -> container escape",
+        "LD_PRELOAD hijack in SUID binary",
+        "Polkit CVE-2021-4034 (PwnKit)",
       ]
     : [
         "Unquoted service path exploitation",
         "AlwaysInstallElevated registry abuse",
-        "Token impersonation (SeImpersonatePrivilege)",
+        "Token impersonation (SeImpersonatePrivilege -> JuicyPotato)",
+        "DLL hijacking in writable PATH directory",
+        "Scheduled task writable binary replacement",
+        "PrintNightmare CVE-2021-34527",
+        "HiveNightmare CVE-2021-36934 (SAM dump)",
+        "UAC bypass via fodhelper.exe",
       ]
 
   const chosenTechnique = techniques[Math.floor(Math.random() * techniques.length)]
-  const success = Math.random() < 0.85
+  const success = Math.random() < 0.82
 
   logs.push({
     timestamp: timestamp(),
     phase: "privilege_escalation",
-    message: `Current access level: ${currentAccess}. Attempting privilege escalation...`,
+    message: `Current access level: ${currentAccess}. Enumerating escalation vectors on ${osFamily}...`,
     level: "info",
   })
 
   logs.push({
     timestamp: timestamp(),
     phase: "privilege_escalation",
-    message: `[AI-DECISION] Detected ${isLinux ? "Linux" : "Windows"} environment. Evaluated ${techniques.length} escalation paths. Selected: "${chosenTechnique}" based on OS fingerprint and current ${currentAccess}-level access.`,
+    message: `[AI-DECISION] Detected ${osFamily} environment. Evaluated ${techniques.length} escalation paths: ${techniques.slice(0, 3).join(", ")}... Selected: "${chosenTechnique}" based on OS fingerprint, kernel version, and current ${currentAccess}-level access.`,
     level: "info",
   })
 
   logs.push({
     timestamp: timestamp(),
     phase: "privilege_escalation",
-    message: `Technique selected: ${chosenTechnique}`,
+    message: `Executing: ${chosenTechnique}`,
     level: "info",
     mitreTechnique: MITRE_TECHNIQUES.T1068,
   })
@@ -359,11 +390,17 @@ export function attemptPrivilegeEscalation(
       level: "success",
       mitreTechnique: MITRE_TECHNIQUES.T1068,
     })
+    logs.push({
+      timestamp: timestamp(),
+      phase: "privilege_escalation",
+      message: `  uid=0(root) gid=0(root) groups=0(root)`,
+      level: "success",
+    })
   } else {
     logs.push({
       timestamp: timestamp(),
       phase: "privilege_escalation",
-      message: `[FAILED] Privilege escalation unsuccessful. Trying fallback...`,
+      message: `[FAILED] Privilege escalation via ${chosenTechnique} unsuccessful. Kernel may be patched.`,
       level: "error",
     })
   }
@@ -400,19 +437,39 @@ export function establishPersistence(
   mitreMapping: MitreMapping
 } {
   const logs: AttackLogEntry[] = []
-  const isLinux = osFamily.toLowerCase().includes("linux")
+  const isLinux = osFamily.toLowerCase().includes("linux") || osFamily.toLowerCase().includes("bsd")
 
-  const method = isLinux
-    ? "Cron job persistence (/etc/cron.d/update-check)"
-    : "Registry Run Key (HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run)"
+  const methods = isLinux
+    ? [
+        "Cron job persistence (/etc/cron.d/system-update)",
+        "SSH authorized_keys backdoor (~/.ssh/authorized_keys)",
+        "Systemd service backdoor (/etc/systemd/system/svc-helper.service)",
+        "Bash profile hook (~/.bashrc reverse shell)",
+        "PAM backdoor module (/lib/security/pam_backdoor.so)",
+      ]
+    : [
+        "Registry Run Key (HKLM\\...\\CurrentVersion\\Run)",
+        "Scheduled Task (schtasks /create /tn UpdateCheck)",
+        "WMI Event Subscription persistence",
+        "DLL side-loading in System32",
+        "Service binary replacement (svc_helper.exe)",
+      ]
 
+  const method = methods[Math.floor(Math.random() * methods.length)]
   const technique = isLinux ? MITRE_TECHNIQUES.T1053 : MITRE_TECHNIQUES.T1547
-  const success = accessLevel === "root" || accessLevel === "admin" ? true : Math.random() < 0.6
+  const success = accessLevel === "root" || accessLevel === "admin" ? true : Math.random() < 0.5
 
   logs.push({
     timestamp: timestamp(),
     phase: "persistence",
-    message: `Establishing persistence mechanism: ${method}`,
+    message: `[AI-DECISION] Selecting persistence mechanism for ${osFamily} with ${accessLevel}-level access. Chosen: ${method}`,
+    level: "info",
+  })
+
+  logs.push({
+    timestamp: timestamp(),
+    phase: "persistence",
+    message: `Installing: ${method}`,
     level: "info",
     mitreTechnique: technique,
   })
@@ -421,7 +478,7 @@ export function establishPersistence(
     logs.push({
       timestamp: timestamp(),
       phase: "persistence",
-      message: `[PERSISTED] Backdoor installed via ${isLinux ? "cron job" : "registry key"}`,
+      message: `[PERSISTED] Backdoor installed via ${method}. Will survive reboot.`,
       level: "success",
       mitreTechnique: technique,
     })
@@ -429,7 +486,7 @@ export function establishPersistence(
     logs.push({
       timestamp: timestamp(),
       phase: "persistence",
-      message: `[FAILED] Insufficient privileges for persistence mechanism`,
+      message: `[FAILED] Insufficient privileges (${accessLevel}) for ${method}`,
       level: "error",
     })
   }
@@ -438,8 +495,8 @@ export function establishPersistence(
     method,
     success,
     output: success
-      ? `Persistence established via ${method}. Backdoor will survive reboot.`
-      : `Persistence failed. Insufficient access level (${accessLevel}) for ${method}.`,
+      ? `Persistence established via ${method}.`
+      : `Persistence failed. Insufficient access (${accessLevel}).`,
     mitreTechnique: technique,
     timestamp: timestamp(),
   }
@@ -467,29 +524,39 @@ export function performLateralMovement(
   const results: LateralMovementResult[] = []
   const mitreMappings: MitreMapping[] = []
 
-  // Generate subnet targets
   const baseIP = target.split(".").slice(0, 3).join(".")
-  const lastOctet = parseInt(target.split(".")[3])
-  const lateralTargets = [
-    `${baseIP}.${lastOctet + 1}`,
-    `${baseIP}.${lastOctet + 2}`,
-    `${baseIP}.${lastOctet + 5}`,
-  ]
+  const lastOctet = parseInt(target.split(".")[3]) || 1
+  const targetCount = 2 + Math.floor(Math.random() * 4) // 2-5 lateral targets
+  const lateralTargets: string[] = []
+
+  for (let i = 0; i < targetCount; i++) {
+    let octet = lastOctet + Math.floor(Math.random() * 50) + 1
+    if (octet > 254) octet = Math.floor(Math.random() * 254) + 1
+    lateralTargets.push(`${baseIP}.${octet}`)
+  }
+
+  const methods = credentials.length > 0
+    ? ["Pass-the-Hash (PtH)", "Credential reuse via SSH", "WMI remote execution", "PsExec with harvested creds"]
+    : ["SMB relay attack", "LLMNR/NBT-NS poisoning", "ARP spoofing + credential capture", "Kerberoasting"]
 
   logs.push({
     timestamp: timestamp(),
     phase: "lateral_movement",
-    message: `Scanning internal subnet ${baseIP}.0/24 for lateral movement targets...`,
+    message: `Scanning internal subnet ${baseIP}.0/24 for ${lateralTargets.length} lateral movement targets...`,
     level: "info",
     mitreTechnique: MITRE_TECHNIQUES.T1021,
   })
 
-  lateralTargets.forEach((lateralTarget, index) => {
-    const success = Math.random() < 0.6
-    const method =
-      credentials.length > 0
-        ? "Credential reuse (pass-the-hash)"
-        : "SMB relay attack"
+  lateralTargets.forEach((lateralTarget) => {
+    const success = Math.random() < 0.55
+    const method = methods[Math.floor(Math.random() * methods.length)]
+
+    logs.push({
+      timestamp: timestamp(),
+      phase: "lateral_movement",
+      message: `[AI-DECISION] Targeting ${lateralTarget}. Method: ${method}. ${credentials.length > 0 ? `Using ${credentials.length} harvested credential(s).` : "No credentials available, attempting relay/poisoning."}`,
+      level: "info",
+    })
 
     logs.push({
       timestamp: timestamp(),
@@ -502,15 +569,21 @@ export function performLateralMovement(
       logs.push({
         timestamp: timestamp(),
         phase: "lateral_movement",
-        message: `[MOVED] Successfully pivoted to ${lateralTarget} via ${method}`,
+        message: `[PIVOTED] Successfully moved to ${lateralTarget} via ${method}`,
         level: "success",
         mitreTechnique: MITRE_TECHNIQUES.T1021,
       })
     } else {
+      const failReasons = [
+        "Host unreachable - may be firewalled",
+        "Credentials invalid on this host",
+        "Service not running on target",
+        "EDR blocked lateral movement attempt",
+      ]
       logs.push({
         timestamp: timestamp(),
         phase: "lateral_movement",
-        message: `[BLOCKED] Failed to move to ${lateralTarget} - host unreachable or credentials invalid`,
+        message: `[BLOCKED] ${lateralTarget} - ${failReasons[Math.floor(Math.random() * failReasons.length)]}`,
         level: "error",
       })
     }
@@ -543,13 +616,11 @@ export function getNextPhase(state: AttackState): AttackPhase {
   if (state.phase === "recon") return "scanning"
   if (state.phase === "scanning") return "analysis"
 
-  // Rule-based decision scoring
   if (state.accessLevel === "none") {
     if (state.vulnerabilities.length > 0 && state.exploitResults.length === 0) {
       return "exploitation"
     }
     if (state.exploitResults.length > 0 && state.exploitResults.every((r) => !r.success)) {
-      // Try more exploits if we have more vulnerabilities
       const exploitedVulns = new Set(state.exploitResults.map((r) => r.vulnerability.id))
       const unexploited = state.vulnerabilities.filter((v) => !exploitedVulns.has(v.id))
       if (unexploited.length > 0) return "exploitation"
