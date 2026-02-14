@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next"
+import type { Metadata } from "next"
 import { JetBrains_Mono, Inter } from "next/font/google"
 import "./globals.css"
 
@@ -14,10 +14,6 @@ export const metadata: Metadata = {
     "AI-driven red team automation platform for scenario-driven attack chain simulation with MITRE ATT&CK mapping.",
 }
 
-export const viewport: Viewport = {
-  themeColor: "#00e68a",
-}
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -25,6 +21,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
+      <head>
+        <meta name="theme-color" content="#00e68a" />
+      </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased`}
       >

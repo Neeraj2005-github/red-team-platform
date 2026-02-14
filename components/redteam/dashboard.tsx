@@ -21,7 +21,7 @@ import {
   RotateCcw,
   Terminal,
   ShieldAlert,
-  Map,
+  Map as MapIcon,
   FileText,
   Crosshair,
   Loader2,
@@ -181,7 +181,7 @@ export function Dashboard() {
   const tabs: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: "terminal", label: "Terminal", icon: Terminal },
     { id: "vulnerabilities", label: "Vulnerabilities", icon: ShieldAlert },
-    { id: "mitre", label: "MITRE ATT&CK", icon: Map },
+    { id: "mitre", label: "MITRE ATT&CK", icon: MapIcon },
     { id: "report", label: "Report", icon: FileText },
   ]
 

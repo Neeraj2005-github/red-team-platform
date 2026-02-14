@@ -118,6 +118,7 @@ export function ReportView({
   }
 
   function downloadCSV() {
+    if (!state) return
     const header = "CVE,Name,Severity,CVSS,Port,MITRE Technique\n"
     const rows = state.vulnerabilities
       .map(
@@ -133,6 +134,7 @@ export function ReportView({
   }
 
   function downloadText() {
+    if (!state) return
     const divider = "=".repeat(60)
     const lines = [
       divider,
